@@ -22,6 +22,8 @@ PubSubClient client(espClient);
 
 DHT dht(DHTPIN, DHTTYPE);
 
+#define SUELO_PIN 34
+
 // ---------------- BUFFER (RAM) ----------------
 String buffer[50];
 int bufferIndex = 0;
@@ -114,6 +116,8 @@ void setup() {
 
   pinMode(LUZ_PIN, INPUT_PULLUP);
 
+  pinMode(SUELO_PIN, INPUT);
+
   dht.begin();
 
   conectarWiFi();
@@ -150,6 +154,8 @@ void loop() {
 
   int luz = digitalRead(LUZ_PIN);
 
+  int humedadSuelo = analogRead(SUELO_PIN);
+
   if (isnan(h) || isnan(t)) {
 
     Serial.println("⚠️ Error DHT22");
@@ -165,6 +171,7 @@ void loop() {
   json += "\"timestamp\":\"" + getTime() + "\",";
   json += "\"temperatura\":" + String(t) + ",";
   json += "\"humedad\":" + String(h) + ",";
+  json += "\"humedad_suelo\":" + String(humedadSuelo) + ",";
   json += "\"luz\":" + String(luz == LOW ? "true" : "false");
 
   json += "}";

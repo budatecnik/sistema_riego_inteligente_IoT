@@ -1,0 +1,9 @@
+ 
+# Ocultar contraseñas
+secrets.h
+
+# Archivos temporales de compilación
+.pio/
+.vscode/
+build/
+*.local

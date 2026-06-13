@@ -8,7 +8,11 @@ class Lectura(Base):
     id = Column(Integer, primary_key=True, index=True)
 
     temperatura = Column(Float)
+
     humedad = Column(Float)
+
+    humedad_suelo = Column(Integer)
+
     luz = Column(Boolean)
 
     timestamp = Column(String)

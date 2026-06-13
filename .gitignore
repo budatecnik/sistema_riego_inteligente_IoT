@@ -1,16 +1,32 @@
+# Entornos virtuales (¡Súper importante!)
 .venv/
+backend/venv/
 venv/
-__pycache__/
+
+# Archivos de caché de Python
+**/__pycache__/
 *.pyc
-*.pyo
-*.swp
 
-# bases de datos locales
+# Bases de datos locales (Contienen datos de prueba, no van a Git)
 *.db
+backend/iot.db
+backend/sql_app.db
+sensores.db
 
-# configs locales
-.env
+# Configuraciones de editores e IDEs
+.idea/
+backend/.idea/
 .vscode/
 
-# logs
+# Archivos temporales, respaldos e instaladores
+*.save
+*version anterior
+*.deb
 *.log
+backend/proyecto_iot.log
+backend/main.py.save
+backend/splunk.deb
+
+# Secretos y contraseñas de hardware
+secrets.h
+**/secrets.h
