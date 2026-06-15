@@ -1,0 +1,33 @@
+
+
+services:
+  # Tu servidor FastAPI (Backend IoT)
+  servidor_iot:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: servidor-iot-run
+    ports:
+      - "8000:8000"
+    environment:
+      - MQTT_HOST=mqtt_broker
+      - PORT=8000
+    depends_on:
+      - mqtt_broker
+    restart: always
+
+  # El Broker MQTT (Mosquitto)
+  mqtt_broker:
+    image: eclipse-mosquitto:latest
+    container_name: mosquitto-broker
+    ports:
+      - "1883:1883"
+      - "9001:9001"
+    volumes:
+      - mosquitto_data:/mosquitto/data
+      - mosquitto_log:/mosquitto/log
+    restart: always
+
+volumes:
+  mosquitto_data:
+  mosquitto_log:

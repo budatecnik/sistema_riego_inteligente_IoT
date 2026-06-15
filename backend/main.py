@@ -1,16 +1,22 @@
-from fastapi import FastAPI, Depends
-from fastapi.responses import HTMLResponse
-from fastapi.middleware.cors import CORSMiddleware
-from sqlalchemy.orm import Session
-from database import SessionLocal, engine
-from modelos import Base, Lectura
-import paho.mqtt.client as mqtt
+import os
 import json
+import logging
+import threading
+import time
 from datetime import datetime
 from zoneinfo import ZoneInfo
-import threading
-import logging
+from contextlib import asynccontextmanager
 from logging.handlers import RotatingFileHandler
+
+from fastapi import FastAPI, Depends
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import HTMLResponse
+import paho.mqtt.client as mqtt
+from sqlalchemy.orm import Session
+
+# Importaciones de tus módulos locales
+from backend.database import SessionLocal, engine
+from backend.modelos import Base, Lectura
 
 # ---------------- DB ----------------
 Base.metadata.create_all(bind=engine)
@@ -29,40 +35,36 @@ logger.setLevel(logging.INFO)
 # RotatingFileHandler evita que el archivo crezca infinitamente (max 5MB por archivo)
 file_handler = RotatingFileHandler("proyecto_iot.log", maxBytes=5000000, backupCount=3)
 
-# Formato estándar que a Splunk le encanta (Timestamp - Nivel - Mensaje)
+# Formato estándar para Splunk (Timestamp - Nivel - Mensaje)
 formatter = logging.Formatter('%(asctime)s [%(levelname)s] %(message)s', datefmt='%Y-%m-%d %H:%M:%S')
 file_handler.setFormatter(formatter)
 logger.addHandler(file_handler)
 
-app = FastAPI()
-
-# ---------------- CORS ----------------
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],  # Modificalo en producción si es necesario
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
-
-# ---------------- MEMORIA LIVE ----------------
+# ---------------- MEMORIA LIVE (RAM) ----------------
 datos_actuales = {
     "temperatura": 0,
-    "humedad": 0,
-    "humedad_suelo": 0,
+    "humidity": 0,
+    "humidity_suelo": 0,
     "luz": False,
     "timestamp": ""
 }
 
 # ---------------- MQTT CONFIG ----------------
-BROKER = "127.0.0.1"
-PORT = 1883
+# Lee 'MQTT_HOST' desde las variables de entorno de Docker. Por defecto usa 'localhost'
+BROKER = os.getenv("MQTT_HOST", "localhost")
+PORT = int(os.getenv("MQTT_PORT", 1883))
 TOPIC = "esp32/sensores"
-mqtt_client = mqtt.Client()
+
+# Configuración obligatoria usando la API v2 de Paho-MQTT
+mqtt_client = mqtt.Client(callback_api_version=mqtt.CallbackAPIVersion.VERSION2)
 
 # ---------------- CALLBACKS MQTT ----------------
-def on_connect(client, userdata, flags, rc):
-    print("MQTT conectado con código:", rc)
-    client.subscribe(TOPIC)
+def on_connect(client, userdata, flags, reason_code, properties):
+    if reason_code == 0:
+        print(f"✅ MQTT conectado exitosamente al broker: {BROKER}")
+        client.subscribe(TOPIC)
+    else:
+        print(f"❌ Error de conexión MQTT. Código: {reason_code}")
 
 def on_message(client, userdata, msg):
     global datos_actuales
@@ -82,7 +84,7 @@ def on_message(client, userdata, msg):
             "timestamp": fecha_hora_actual
         }
 
-        # 2. 🚨 PERSISTENCIA EN BASE DE DATOS (Para que funcione el /historial)
+        # 2. PERSISTENCIA EN BASE DE DATOS
         db = SessionLocal()
         try:
             nueva_lectura = Lectura(
@@ -90,7 +92,7 @@ def on_message(client, userdata, msg):
                 humedad=datos_actuales["humedad"],
                 humedad_suelo=datos_actuales["humedad_suelo"],
                 luz=datos_actuales["luz"]
-                # Nota: Si tu modelo 'Lectura' requiere un campo fecha o timestamp string, agregalo aquí.
+                # Nota: Si tu modelo 'Lectura' requiere un campo fecha o timestamp string, agrégalo aquí.
                 # Ejemplo: fecha=datos_actuales["timestamp"]
             )
             db.add(nueva_lectura)
@@ -99,9 +101,9 @@ def on_message(client, userdata, msg):
             logger.error(f"EVENT=DB_SAVE_ERROR msg='No se pudo guardar la lectura: {str(db_err)}'")
             print("⚠️ Error guardando en BD:", db_err)
         finally:
-            db.close() # Cerramos manualmente la sesión ya que no estamos en un endpoint HTTP con Depends
+            db.close() # Cierre manual de la sesión (fuera de endpoints HTTP)
 
-        # 3. LÍNEA CLAVE PARA SPLUNK: Escribe la telemetría exacta en el archivo .log
+        # 3. LOG PARA SPLUNK
         logger.info(f"EVENT=MQTT_DATA_RECEIVED temp={datos_actuales['temperatura']} hum={datos_actuales['humedad']} suelo={datos_actuales['humedad_suelo']} luz={datos_actuales['luz']}")
         print("📥 Datos recibidos, guardados en BD y logueados exitosamente:", datos_actuales)
 
@@ -110,41 +112,57 @@ def on_message(client, userdata, msg):
         logger.error(error_msg)
         print("⚠️ Error procesando MQTT:", e)
 
-# Asignación correcta de los callbacks (fuera de las funciones)
+# Asignación de callbacks
 mqtt_client.on_connect = on_connect
 mqtt_client.on_message = on_message
 
 # ---------------- MQTT LOOP ----------------
 def mqtt_worker():
-    import time
     while True:
         try:
-            print("🔌 Intentando conectar al Broker MQTT...")
+            print(f"🔌 Intentando conectar al Broker MQTT en {BROKER}:{PORT}...")
             mqtt_client.connect(BROKER, PORT, 60)
             mqtt_client.loop_forever()
         except Exception as e:
             logger.error(f"EVENT=MQTT_CONNECTION_FAILED msg='{str(e)}'")
             print(f"⚠️ MQTT caído: {e} — Reintentando en 5 segundos...")
+            try:
+                mqtt_client.disconnect()
+            except:
+                pass
             time.sleep(5)
 
-# ---------------- STARTUP / SHUTDOWN ----------------
-@app.on_event("startup")
-def startup():
-    # Iniciar el hilo de fondo para que MQTT no congele a FastAPI
+# ---------------- LIFESPAN (STARTUP / SHUTDOWN) ----------------
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # --- [STARTUP] Lo que corre al iniciar el servidor ---
     thread = threading.Thread(target=mqtt_worker, daemon=True)
     thread.start()
 
-    # Log de "Prueba de vida" inicial: ni bien arranca el script escribe aquí
     logger.info("EVENT=SERVER_START status=SUCCESS msg='El backend de FastAPI encendio correctamente'")
-    print("🚀 Backend iniciado y listo")
-
-@app.on_event("shutdown")
-def shutdown():
+    print("🚀 Backend iniciado y listo (Lifespan)")
+    
+    yield  # El servidor corre aquí
+    
+    # --- [SHUTDOWN] Lo que corre al apagar el servidor ---
     try:
         logger.info("EVENT=SERVER_SHUTDOWN")
         mqtt_client.disconnect()
+        print("🛑 MQTT desconectado limpiamente")
     except Exception:
         pass
+
+# ---------------- INSTANCIA DE FASTAPI ----------------
+# Se coloca abajo de lifespan para evitar el NameError
+app = FastAPI(lifespan=lifespan)
+
+# ---------------- MIDDLEWARES ----------------
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 # ---------------- API ENDPOINTS ----------------
 @app.get("/datos-actuales")

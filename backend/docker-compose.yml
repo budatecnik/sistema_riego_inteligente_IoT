@@ -1,0 +1,33 @@
+version: '3.8'
+
+services:
+  # 1. Tu servidor IoT (FastAPI)
+  iot_server:
+    build:
+      context: ./iot_server
+      dockerfile: Dockerfile
+    container_name: servidor-iot-app
+    ports:
+      - "8000:8000"
+    depends_on:
+      - mqtt_broker
+    environment:
+      - MQTT_HOST=mqtt_broker
+      - MQTT_PORT=1883
+    restart: always
+
+  # 2. El Broker MQTT (Mosquitto)
+  mqtt_broker:
+    image: eclipse-mosquitto:2.0
+    container_name: mqtt-broker-sri
+    ports:
+      - "1883:1883"   # Puerto por defecto de MQTT
+      - "9001:9001"   # Websockets (opcional)
+    volumes:
+      - mosquitto_data:/mosquitto/data
+      - mosquitto_log:/mosquitto/log
+    restart: always
+
+volumes:
+  mosquitto_data:
+  mosquitto_log:

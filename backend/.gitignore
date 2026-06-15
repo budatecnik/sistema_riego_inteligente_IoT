@@ -7,3 +7,8 @@ secrets.h
 .vscode/
 build/
 *.local
+__pycache__/
+*.pyc
+.venv/
+venv/
+.env

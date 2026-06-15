@@ -1,5 +1,8 @@
 from sqlalchemy import Column, Integer, Float, Boolean, String
-from database import Base
+
+
+# Por esto:
+from backend.database import Base
 
 class Lectura(Base):
 
