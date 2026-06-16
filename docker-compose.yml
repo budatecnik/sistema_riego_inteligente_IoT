@@ -1,33 +1,32 @@
-
-
 services:
-  # Tu servidor FastAPI (Backend IoT)
-  servidor_iot:
-    build:
-      context: .
-      dockerfile: Dockerfile
-    container_name: servidor-iot-run
-    ports:
-      - "8000:8000"
-    environment:
-      - MQTT_HOST=mqtt_broker
-      - PORT=8000
-    depends_on:
-      - mqtt_broker
-    restart: always
-
-  # El Broker MQTT (Mosquitto)
   mqtt_broker:
     image: eclipse-mosquitto:latest
     container_name: mosquitto-broker
     ports:
       - "1883:1883"
       - "9001:9001"
-    volumes:
-      - mosquitto_data:/mosquitto/data
-      - mosquitto_log:/mosquitto/log
-    restart: always
 
+  servidor_iot:
+    build: .
+    container_name: servidor-iot-run
+    ports:
+      - "8000:8000"
+
+  splunk:
+    image: splunk/splunk:latest
+    container_name: splunk-enterprise
+    environment:
+      - SPLUNK_START_ARGS=--accept-license
+      - SPLUNK_PASSWORD=SplunkPassword123!
+    ports:
+      - "8001:8000"  # Interfaz web (http://localhost:8001)
+      - "8089:8089"  # API de administración
+      - "8088:8088"  # HTTP Event Collector (HEC)
+    volumes:
+      - splunk-var:/opt/splunk/var
+      - splunk-etc:/opt/splunk/etc  # <--- Agregado para no perder tokens ni usuarios
+
+# === DECLARACIÓN DE VOLÚMENES GLOBALES ===
 volumes:
-  mosquitto_data:
-  mosquitto_log:
+  splunk-var:
+  splunk-etc:                   # <--- Agregado aquí también

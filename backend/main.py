@@ -50,8 +50,8 @@ datos_actuales = {
 }
 
 # ---------------- MQTT CONFIG ----------------
-# Lee 'MQTT_HOST' desde las variables de entorno de Docker. Por defecto usa 'localhost'
-BROKER = os.getenv("MQTT_HOST", "localhost")
+# Ahora, si Docker no pasa la variable, por defecto buscará el DNS interno de la red Docker
+BROKER = os.getenv("MQTT_HOST", "mqtt_broker")
 PORT = int(os.getenv("MQTT_PORT", 1883))
 TOPIC = "esp32/sensores"
 
